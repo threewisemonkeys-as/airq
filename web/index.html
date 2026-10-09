@@ -1,0 +1,548 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Bedroom Air Monitor</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/uplot@1.6.31/dist/uPlot.min.css" integrity="sha384-IfV0B7MIOYuO95kO9G5ySKPz/85zqFNOAs8iy4tkK5zd9izhJAB8b7lHrwYqqmYE" crossorigin="anonymous">
+<script src="https://cdn.jsdelivr.net/npm/uplot@1.6.31/dist/uPlot.iife.min.js" integrity="sha384-XMP23k7YSCFr13Xrkxh4IO0v1W+8fB6AP+3Vycxphp2Z0V2vocAZHyuGaFCysrtM" crossorigin="anonymous"></script>
+<style>
+:root {
+  color-scheme: light;
+  --page: #f9f9f7;
+  --surface-1: #fcfcfb;
+  --text-primary: #0b0b0b;
+  --text-secondary: #52514e;
+  --text-muted: #898781;
+  --grid: #e1e0d9;
+  --axis: #c3c2b7;
+  --border: rgba(11,11,11,0.10);
+  --s-indoor: #2a78d6;     /* slot 1 blue   */
+  --s-outdoor: #eb6834;    /* slot 2 orange */
+  --s-regional: #1baf7a;   /* slot 3 aqua   */
+  --s-ratio: #4a3aa7;      /* slot 7 violet - derived series, its own identity */
+  /* status palette - fixed across themes, never used for series */
+  --st-good: #0ca30c; --st-warning: #fab219; --st-serious: #ec835a; --st-critical: #d03b3b;
+  --band-alpha: 0.13;
+}
+@media (prefers-color-scheme: dark) {
+  :root:where(:not([data-theme="light"])) {
+    color-scheme: dark;
+    --page: #0d0d0d; --surface-1: #1a1a19;
+    --text-primary: #ffffff; --text-secondary: #c3c2b7; --text-muted: #898781;
+    --grid: #2c2c2a; --axis: #383835; --border: rgba(255,255,255,0.10);
+    --s-indoor: #3987e5; --s-outdoor: #d95926; --s-regional: #199e70; --s-ratio: #9085e9;
+    --band-alpha: 0.14;
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --page: #0d0d0d; --surface-1: #1a1a19;
+  --text-primary: #ffffff; --text-secondary: #c3c2b7; --text-muted: #898781;
+  --grid: #2c2c2a; --axis: #383835; --border: rgba(255,255,255,0.10);
+  --s-indoor: #3987e5; --s-outdoor: #d95926; --s-regional: #199e70; --s-ratio: #9085e9;
+  --band-alpha: 0.14;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0; background: var(--page); color: var(--text-primary);
+  font: 14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+main { max-width: 1180px; margin: 0 auto; padding: 24px 16px 64px; }
+header { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 16px; margin-bottom: 16px; }
+h1 { font-size: 20px; font-weight: 600; margin: 0; }
+.sub { color: var(--text-secondary); }
+.filters { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 8px 0 20px; }
+.seg { display: inline-flex; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; background: var(--surface-1); }
+.seg button {
+  font: inherit; border: 0; background: none; color: var(--text-secondary);
+  padding: 6px 12px; cursor: pointer;
+}
+.seg button + button { border-left: 1px solid var(--border); }
+.seg button:hover { background: color-mix(in srgb, var(--text-primary) 5%, transparent); }
+.seg button[aria-pressed="true"] { color: var(--text-primary); font-weight: 600; background: color-mix(in srgb, var(--text-primary) 8%, transparent); }
+.filters .status { color: var(--text-muted); margin-left: auto; font-size: 13px; }
+.notice {
+  border: 1px solid var(--border); background: var(--surface-1); border-radius: 10px;
+  padding: 10px 14px; margin-bottom: 16px; color: var(--text-secondary);
+}
+.notice code { font-size: 12.5px; }
+.tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; margin-bottom: 20px; }
+.tile { background: var(--surface-1); border: 1px solid var(--border); border-radius: 12px; padding: 14px 16px; }
+.tile .label { color: var(--text-secondary); font-size: 13px; }
+.tile .pair { display: flex; gap: 18px; align-items: baseline; margin-top: 4px; }
+.tile .v { font-size: 26px; font-weight: 600; }
+.tile .u { color: var(--text-muted); font-size: 13px; margin-left: 2px; }
+.tile .k { display: flex; align-items: center; gap: 6px; color: var(--text-secondary); font-size: 12px; }
+.tile .foot { color: var(--text-muted); font-size: 12px; margin-top: 4px; }
+.key { display: inline-block; width: 14px; height: 2px; border-radius: 1px; flex: none; }
+.grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 540px), 1fr)); gap: 12px; }
+.card { background: var(--surface-1); border: 1px solid var(--border); border-radius: 12px; padding: 14px 14px 8px; min-width: 0; }
+.card.wide { grid-column: 1 / -1; }
+.card h2 { font-size: 15px; font-weight: 600; margin: 0; }
+.card .desc { color: var(--text-secondary); font-size: 13px; margin: 2px 0 8px; }
+.legend { display: flex; flex-wrap: wrap; gap: 4px 16px; font-size: 13px; color: var(--text-secondary); margin-bottom: 4px; }
+.legend span { display: inline-flex; align-items: center; gap: 6px; }
+.plot { position: relative; transition: opacity .15s; }
+.loading .plot { opacity: .5; }
+.u-legend { display: none; }
+.uplot { font-family: inherit; }
+.tip {
+  position: absolute; pointer-events: none; z-index: 10; display: none;
+  background: var(--surface-1); border: 1px solid var(--border); border-radius: 8px;
+  box-shadow: 0 4px 16px rgba(0,0,0,.12); padding: 8px 10px; font-size: 12.5px; min-width: 150px;
+}
+.tip .t { color: var(--text-muted); margin-bottom: 4px; }
+.tip .row { display: flex; align-items: center; gap: 8px; }
+.tip .row b { font-weight: 600; color: var(--text-primary); font-variant-numeric: tabular-nums; }
+.tip .row span:last-child { color: var(--text-secondary); }
+.status-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; flex: none; }
+.tip .tier { color: var(--text-secondary); margin-left: 22px; font-size: 12px; }
+.tile .status { display: flex; align-items: center; gap: 6px; color: var(--text-secondary); font-size: 12px; margin-top: 6px; }
+details { margin-top: 20px; background: var(--surface-1); border: 1px solid var(--border); border-radius: 12px; padding: 12px 14px; }
+summary { cursor: pointer; font-weight: 600; }
+.tablewrap { overflow: auto; max-height: 420px; margin-top: 10px; }
+table { border-collapse: collapse; font-size: 12.5px; font-variant-numeric: tabular-nums; width: 100%; }
+th, td { padding: 4px 10px; text-align: right; border-bottom: 1px solid var(--grid); white-space: nowrap; }
+th { position: sticky; top: 0; background: var(--surface-1); color: var(--text-secondary); font-weight: 600; }
+th:first-child, td:first-child { text-align: left; }
+a { color: inherit; }
+footer { color: var(--text-muted); font-size: 12.5px; margin-top: 20px; }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>Bedroom Air Monitor</h1>
+    <span class="sub" id="where"></span>
+  </header>
+
+  <div class="filters">
+    <div class="seg" id="range" role="group" aria-label="Time range">
+      <button data-h="24">24 h</button>
+      <button data-h="72">3 days</button>
+      <button data-h="168">7 days</button>
+      <button data-h="720">30 days</button>
+      <button data-h="2160">90 days</button>
+      <button data-h="8760">1 year</button>
+      <button data-h="0">All</button>
+    </div>
+    <div class="seg" id="theme" role="group" aria-label="Theme">
+      <button data-t="auto">Auto</button>
+      <button data-t="light">Light</button>
+      <button data-t="dark">Dark</button>
+    </div>
+    <span class="status" id="status"></span>
+  </div>
+
+  <div class="notice" id="pa-notice" hidden>
+    Outdoor PM2.5 currently comes only from the regional regulatory monitor, which may be far away.
+    For readings from sensors near you, add a free PurpleAir API key to <code>config.json</code>
+    (<code>purpleair_api_key</code>) — see README.
+  </div>
+
+  <section class="tiles" id="tiles"></section>
+
+  <section class="grid" id="charts"></section>
+
+  <details id="table-details">
+    <summary>Data table (hourly)</summary>
+    <p class="sub">Every value plotted above, hourly means. <a id="csv" href="#">Download CSV</a></p>
+    <div class="tablewrap"><table id="table"></table></div>
+  </details>
+
+  <footer id="sources"></footer>
+</main>
+
+<script>
+const $ = (s, el = document) => el.querySelector(s);
+const css = name => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+const SERIES_LABEL = { in: "Indoor", out: "Outdoor · local PurpleAir", ref: "Outdoor · regional monitor" };
+
+/* Thresholds. Bands are drawn only for non-good zones; values below the first band are "Good".
+   PM2.5: EPA AQI breakpoints (2024), defined for 24 h averages — short spikes are indicative.
+   CO2: common ventilation guidance. TVOC/NOx index: AirGradient's categories (Sensirion indices).
+   RH: comfort/mold guidance. role -> status palette; level adds opacity for the worst tiers. */
+const BANDS = {
+  pm: [
+    { from: 9, to: 35.4, label: "Moderate", role: "warning" },
+    { from: 35.4, to: 55.4, label: "Unhealthy for sensitive groups", role: "serious" },
+    { from: 55.4, to: 125.4, label: "Unhealthy", role: "critical" },
+    { from: 125.4, to: 225.4, label: "Very unhealthy", role: "critical", level: 1.6 },
+    { from: 225.4, to: Infinity, label: "Hazardous", role: "critical", level: 2.2 }],
+  co2: [
+    { from: 800, to: 1000, label: "Moderate", role: "warning" },
+    { from: 1000, to: 1500, label: "Poor ventilation", role: "serious" },
+    { from: 1500, to: Infinity, label: "Unhealthy", role: "critical" }],
+  tvoc: [
+    { from: 150, to: 250, label: "Elevated", role: "warning" },
+    { from: 250, to: 400, label: "High", role: "serious" },
+    { from: 400, to: Infinity, label: "Very high", role: "critical" }],
+  nox: [
+    { from: 20, to: 150, label: "Elevated", role: "warning" },
+    { from: 150, to: 300, label: "High", role: "serious" },
+    { from: 300, to: Infinity, label: "Very high", role: "critical" }],
+  rh: [
+    { from: 0, to: 30, label: "Dry", role: "warning" },
+    { from: 60, to: 70, label: "Damp", role: "warning" },
+    { from: 70, to: Infinity, label: "Mold risk", role: "serious" }],
+};
+const GOOD = { pm: "Good", co2: "Good", tvoc: "Normal", nox: "Normal", rh: "Comfortable" };
+function tierOf(id, v) {
+  if (v == null || !BANDS[id]) return null;
+  return BANDS[id].find(b => v >= b.from && v < b.to) || { label: GOOD[id], role: "good" };
+}
+function statusDot(role) {
+  const d = document.createElement("i"); d.className = "status-dot"; d.style.background = css(`--st-${role}`);
+  return d;
+}
+
+let hours = 24, data = null, plots = [];
+try { const h = localStorage.getItem("airq.hours"); if (h !== null) hours = +h; } catch {}
+let theme = "auto";
+try { theme = localStorage.getItem("airq.theme") || "auto"; } catch {}
+
+function applyTheme() {
+  if (theme === "auto") delete document.documentElement.dataset.theme;
+  else document.documentElement.dataset.theme = theme;
+  document.querySelectorAll("#theme button").forEach(b => b.setAttribute("aria-pressed", b.dataset.t === theme));
+}
+
+/* ---- chart definitions: one y-scale per chart; colors follow the entity ---- */
+function chartDefs(d) {
+  const S = d.series;
+  const paOn = d.meta.purpleair;
+  const pm = [
+    { key: "in_pm25", label: SERIES_LABEL.in, color: "--s-indoor" },
+    ...(paOn ? [{ key: "out_pm25", label: SERIES_LABEL.out, color: "--s-outdoor" }] : []),
+    { key: "ref_pm25", label: `${SERIES_LABEL.ref} (${d.meta.ref_site.split(" (")[0]})`, color: "--s-regional" },
+  ];
+  return [
+    { id: "pm", wide: true, title: "PM2.5", unit: "µg/m³", dec: 1, min0: true,
+      desc: (paOn ? "Fine particles. Indoor and PurpleAir values use the same EPA correction."
+                 : "Fine particles. Indoor is EPA-corrected; the regional monitor is a reference-grade instrument.")
+            + " Regional values older than 3 days are daily means. Bands: EPA AQI categories (defined for 24 h averages).",
+      t: d.t, series: pm },
+    { id: "ratio", title: "Indoor ÷ outdoor PM2.5", unit: "×", dec: 2, min0: true, refLine: 1,
+      refLabel: "1× (same as outside)",
+      desc: `Hourly. Below 1 means your home keeps particles out; above 1 means an indoor source. ` +
+            `Hidden when outdoor < ${d.ratio.min_outdoor} µg/m³ (noise). Outdoor basis: ` +
+            (d.ratio.basis === "out_pm25" ? "local PurpleAir sensors." : "regional monitor."),
+      t: d.ratio.t, raw: { ratio: d.ratio.v },
+      series: [{ key: "ratio", label: "Indoor ÷ outdoor", color: "--s-ratio" }] },
+    { id: "temp", title: "Temperature", unit: "°C", dec: 1,
+      desc: `Outdoor: NWS station ${d.meta.nws_station}.`,
+      t: d.t, series: [
+        { key: "in_temp", label: "Indoor", color: "--s-indoor" },
+        { key: "out_temp", label: "Outdoor · airport", color: "--s-outdoor" }] },
+    { id: "dew", title: "Dew point", unit: "°C", dec: 1,
+      desc: "Absolute moisture — directly comparable indoors and out, unlike relative humidity.",
+      t: d.t, series: [
+        { key: "in_dew", label: "Indoor", color: "--s-indoor" },
+        { key: "out_dew", label: "Outdoor · airport", color: "--s-outdoor" }] },
+    { id: "rh", title: "Relative humidity", unit: "%", dec: 0,
+      desc: "Depends on temperature, so indoor and outdoor differ even with the same moisture. Bands apply to indoor: 30–60% is comfortable.",
+      t: d.t, series: [
+        { key: "in_rh", label: "Indoor", color: "--s-indoor" },
+        { key: "out_rh", label: "Outdoor · airport", color: "--s-outdoor" }] },
+    { id: "co2", title: "Indoor CO₂", unit: "ppm", dec: 0,
+      desc: "Ventilation proxy. Outdoor air is ~420 ppm; above ~1000 ppm is stuffy and can affect concentration.",
+      t: d.t, series: [{ key: "in_co2", label: "Indoor CO₂", color: "--s-indoor" }] },
+    { id: "tvoc", title: "Indoor TVOC index", unit: "index", dec: 0, min0: true, refLine: 100,
+      refLabel: "100 = this room's typical level",
+      desc: "Relative to the sensor's rolling 24 h average (100). Spikes come from cooking, cleaning products, perfume, new furniture.",
+      t: d.t, series: [{ key: "in_tvoc", label: "TVOC index", color: "--s-indoor" }] },
+    { id: "nox", title: "Indoor NOx index", unit: "index", dec: 0, min0: true, refLine: 1,
+      refLabel: "1 = baseline",
+      desc: "Baseline is 1. Rises with combustion — gas stoves, candles, traffic exhaust coming in.",
+      t: d.t, series: [{ key: "in_nox", label: "NOx index", color: "--s-indoor" }] },
+  ].map(c => ({ ...c, values: c.series.map(s => (c.raw || S)[s.key]) }));
+}
+
+const fmtTime = (ts, withDate = true) => new Date(ts * 1000).toLocaleString([], withDate
+  ? { weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }
+  : { hour: "numeric", minute: "2-digit" });
+
+function tooltipPlugin(def, tip) {
+  return {
+    hooks: {
+      setCursor: u => {
+        const i = u.cursor.idx;
+        if (i == null || u.cursor.left < 0) { tip.style.display = "none"; return; }
+        tip.replaceChildren();
+        const t = document.createElement("div");
+        t.className = "t"; t.textContent = fmtTime(u.data[0][i]);
+        tip.append(t);
+        def.series.forEach((s, k) => {
+          const v = u.data[k + 1][i];
+          const row = document.createElement("div"); row.className = "row";
+          const key = document.createElement("i"); key.className = "key"; key.style.background = css(s.color);
+          const b = document.createElement("b");
+          b.textContent = v == null ? "—" : `${v.toFixed(def.dec)} ${def.unit}`;
+          const l = document.createElement("span"); l.textContent = s.label;
+          row.append(key, b, l); tip.append(row);
+          const tier = tierOf(def.id, v);
+          if (tier) {
+            const tr = document.createElement("div"); tr.className = "row tier";
+            tr.append(statusDot(tier.role), document.createTextNode(tier.label)); tip.append(tr);
+          }
+        });
+        tip.style.display = "block";
+        const plotW = u.over.clientWidth;
+        const x = u.cursor.left + u.over.offsetLeft;
+        const w = tip.offsetWidth;
+        tip.style.left = (u.cursor.left + w + 24 > plotW ? x - w - 12 : x + 12) + "px";
+        tip.style.top = (u.over.offsetTop + 8) + "px";
+      },
+    },
+  };
+}
+
+// Semi-opaque surface pill so canvas labels stay legible where a data line crosses them.
+function labelBacking(ctx, x, y, w, h) {
+  ctx.save();
+  ctx.globalAlpha = 0.85; ctx.fillStyle = css("--surface-1");
+  ctx.beginPath(); ctx.roundRect(x, y, w, h, 4 * devicePixelRatio); ctx.fill();
+  ctx.restore();
+}
+
+function bandsPlugin(bands) {
+  return {
+    hooks: {
+      drawClear: u => {
+        const ctx = u.ctx, { left, top, width, height } = u.bbox, dpr = devicePixelRatio;
+        const alpha = parseFloat(css("--band-alpha"));
+        ctx.save();
+        ctx.beginPath(); ctx.rect(left, top, width, height); ctx.clip();
+        for (const b of bands) {
+          const y1 = Math.max(top, u.valToPos(Math.min(b.to, u.scales.y.max), "y", true));
+          const y0 = Math.min(top + height, u.valToPos(Math.max(b.from, u.scales.y.min), "y", true));
+          if (y0 <= y1) continue;
+          ctx.globalAlpha = Math.min(1, alpha * (b.level || 1));
+          ctx.fillStyle = css(`--st-${b.role}`);
+          ctx.fillRect(left, y1, width, y0 - y1);
+          ctx.globalAlpha = 1;
+          if (y0 - y1 >= 16 * dpr) {  // label only where it fits
+            ctx.font = `${11 * dpr}px system-ui`; ctx.textAlign = "right"; ctx.textBaseline = "top";
+            const tx = left + width - 6 * dpr, ty = y1 + 4 * dpr;
+            const w = ctx.measureText(b.label).width;
+            labelBacking(ctx, tx - w - 14 * dpr, ty - 2 * dpr, w + 18 * dpr, 16 * dpr);
+            ctx.fillStyle = css("--text-secondary");
+            ctx.fillText(b.label, tx, ty);
+            ctx.fillStyle = css(`--st-${b.role}`);
+            ctx.beginPath(); ctx.arc(tx - w - 8 * dpr, ty + 6 * dpr, 3.5 * dpr, 0, 2 * Math.PI); ctx.fill();
+          }
+        }
+        ctx.restore();
+      },
+    },
+  };
+}
+
+function yRange(def) {
+  const bands = BANDS[def.id];
+  // Always show where the first warning zone starts, so "how close am I" is visible.
+  const firstUp = bands ? Math.min(...bands.filter(b => b.from > 0).map(b => b.from)) : 0;
+  if (def.id === "rh") return () => [0, 100];
+  if (def.id === "co2") return (u, mn, mx) => [Math.min(400, mn), Math.max(mx * 1.05, firstUp * 1.1)];
+  if (def.min0) return (u, mn, mx) => [0, Math.max(mx * 1.1, (def.refLine ?? 0) * 1.5 || 1, firstUp * 1.25)];
+  return null;
+}
+
+function refLinePlugin(y, label) {
+  return {
+    hooks: {
+      draw: u => {
+        const ctx = u.ctx, py = u.valToPos(y, "y", true);
+        if (py < u.bbox.top || py > u.bbox.top + u.bbox.height) return;
+        ctx.save();
+        ctx.strokeStyle = css("--text-muted"); ctx.lineWidth = 1 * devicePixelRatio;
+        ctx.beginPath(); ctx.moveTo(u.bbox.left, py); ctx.lineTo(u.bbox.left + u.bbox.width, py); ctx.stroke();
+        ctx.textAlign = "left"; ctx.textBaseline = "alphabetic";
+        ctx.font = `${11 * devicePixelRatio}px system-ui`;
+        labelBacking(ctx, u.bbox.left + 3 * devicePixelRatio, py - 18 * devicePixelRatio,
+                     ctx.measureText(label).width + 6 * devicePixelRatio, 16 * devicePixelRatio);
+        ctx.fillStyle = css("--text-muted");
+        ctx.fillText(label, u.bbox.left + 6 * devicePixelRatio, py - 5 * devicePixelRatio);
+        ctx.restore();
+      },
+    },
+  };
+}
+
+function render() {
+  if (!data) return;
+  plots.forEach(p => p.destroy()); plots = [];
+  const host = $("#charts"); host.replaceChildren();
+  const axis = () => ({
+    stroke: css("--text-muted"), font: "12px system-ui",
+    grid: { stroke: css("--grid"), width: 1 }, ticks: { stroke: css("--axis"), width: 1, size: 4 },
+  });
+  for (const def of chartDefs(data)) {
+    const card = document.createElement("div");
+    card.className = "card" + (def.wide ? " wide" : "");
+    const h = document.createElement("h2"); h.textContent = def.unit === "index" ? def.title : `${def.title} (${def.unit})`;
+    const p = document.createElement("p"); p.className = "desc"; p.textContent = def.desc;
+    card.append(h, p);
+    if (def.series.length > 1) {
+      const lg = document.createElement("div"); lg.className = "legend";
+      for (const s of def.series) {
+        const sp = document.createElement("span");
+        const k = document.createElement("i"); k.className = "key"; k.style.background = css(s.color);
+        sp.append(k, document.createTextNode(s.label)); lg.append(sp);
+      }
+      card.append(lg);
+    }
+    const plotEl = document.createElement("div"); plotEl.className = "plot";
+    const tip = document.createElement("div"); tip.className = "tip";
+    card.append(plotEl); host.append(card);
+    plotEl.append(tip);
+
+    const hasData = def.values.some(v => v.some(x => x != null));
+    if (!hasData) {
+      const e = document.createElement("p"); e.className = "desc"; e.textContent = "No data in this range yet.";
+      plotEl.append(e); continue;
+    }
+    const width = plotEl.clientWidth;
+    const opts = {
+      width, height: def.wide ? 280 : 220,
+      legend: { show: false },
+      cursor: { sync: { key: "airq", setSeries: false }, points: { size: 8, width: 2, stroke: css("--surface-1") },
+                drag: { x: false, y: false } },
+      scales: { x: { time: true }, y: yRange(def) ? { range: yRange(def) } : {} },
+      axes: [axis(), { ...axis(), size: 48, values: (u, vals) => {
+        const step = vals.length > 1 ? Math.abs(vals[1] - vals[0]) : 1;
+        const dp = Math.max(0, Math.min(2, -Math.floor(Math.log10(step || 1))));
+        return vals.map(v => v.toLocaleString(undefined, { minimumFractionDigits: dp, maximumFractionDigits: dp }));
+      } }],
+      series: [{}, ...def.series.map(s => ({
+        label: s.label, stroke: css(s.color), width: 2, spanGaps: true,
+        points: { show: false },
+      }))],
+      plugins: [tooltipPlugin(def, tip),
+                ...(BANDS[def.id] ? [bandsPlugin(BANDS[def.id])] : []),
+                ...(def.refLine != null ? [refLinePlugin(def.refLine, def.refLabel)] : [])],
+    };
+    const u = new uPlot(opts, [def.t, ...def.values], plotEl);
+    u.over.addEventListener("mouseleave", () => tip.style.display = "none");
+    plots.push(u);
+  }
+  renderTiles(); renderTable();
+}
+
+function tile(label, rows, foot, statuses = []) {
+  const el = document.createElement("div"); el.className = "tile";
+  const l = document.createElement("div"); l.className = "label"; l.textContent = label;
+  const pair = document.createElement("div"); pair.className = "pair";
+  for (const r of rows) {
+    const box = document.createElement("div");
+    const v = document.createElement("span"); v.className = "v"; v.textContent = r.v;
+    const u = document.createElement("span"); u.className = "u"; u.textContent = r.u;
+    const k = document.createElement("div"); k.className = "k";
+    if (r.color) { const i = document.createElement("i"); i.className = "key"; i.style.background = css(r.color); k.append(i); }
+    k.append(document.createTextNode(r.k));
+    box.append(v, u, k); pair.append(box);
+  }
+  el.append(l, pair);
+  for (const st of statuses) {
+    if (!st.tier) continue;
+    const d = document.createElement("div"); d.className = "status";
+    d.append(statusDot(st.tier.role), document.createTextNode(`${st.name}: ${st.tier.label}`));
+    el.append(d);
+  }
+  if (foot) { const f = document.createElement("div"); f.className = "foot"; f.textContent = foot; el.append(f); }
+  return el;
+}
+
+function renderTiles() {
+  const L = data.latest, f = (k, dec) => L[k] ? L[k].value.toFixed(dec) : "—";
+  const outKey = data.meta.purpleair && L.out_pm25 ? "out_pm25" : "ref_pm25";
+  const outLabel = outKey === "out_pm25"
+    ? `Outdoor · ${L.out_pm25_n ? L.out_pm25_n.value : "?"} sensors` : "Outdoor · regional";
+  const age = k => L[k] ? `${Math.round((Date.now() / 1000 - L[k].ts) / 60)} min ago` : "";
+  const el = $("#tiles"); el.replaceChildren(
+    tile("PM2.5 now", [
+      { v: f("in_pm25", 1), u: "µg/m³", k: "Indoor", color: "--s-indoor" },
+      { v: f(outKey, 1), u: "µg/m³", k: outLabel, color: outKey === "out_pm25" ? "--s-outdoor" : "--s-regional" }],
+      `outdoor reading ${age(outKey)}`,
+      [{ name: "Indoor", tier: tierOf("pm", L.in_pm25?.value) }, { name: "Outdoor", tier: tierOf("pm", L[outKey]?.value) }]),
+    tile("Temperature now", [
+      { v: f("in_temp", 1), u: "°C", k: "Indoor", color: "--s-indoor" },
+      { v: f("out_temp", 1), u: "°C", k: "Outdoor", color: "--s-outdoor" }], `outdoor ${age("out_temp")}`),
+    tile("Dew point now", [
+      { v: f("in_dew", 1), u: "°C", k: "Indoor", color: "--s-indoor" },
+      { v: f("out_dew", 1), u: "°C", k: "Outdoor", color: "--s-outdoor" }], null,
+      [{ name: "Indoor humidity", tier: tierOf("rh", L.in_rh?.value) }]),
+    tile("Indoor CO₂ now", [{ v: f("in_co2", 0), u: "ppm", k: `TVOC index ${f("in_tvoc", 0)} · NOx index ${f("in_nox", 0)}` }],
+      L.in_pm25 ? `indoor reading ${age("in_pm25")}` : "monitor not reporting",
+      [{ name: "CO₂", tier: tierOf("co2", L.in_co2?.value) }, { name: "TVOC", tier: tierOf("tvoc", L.in_tvoc?.value) },
+       { name: "NOx", tier: tierOf("nox", L.in_nox?.value) }]),
+  );
+}
+
+async function renderTable() {
+  if (!$("#table-details").open) return;
+  const res = await fetch(`/api/csv?hours=${hours}`);
+  const rows = (await res.text()).trim().split("\n").map(r => r.split(","));
+  const tbl = $("#table"); tbl.replaceChildren();
+  const head = document.createElement("tr");
+  rows[0].forEach(h => { const th = document.createElement("th"); th.textContent = h; head.append(th); });
+  tbl.append(head);
+  rows.slice(1).reverse().forEach(r => {
+    const tr = document.createElement("tr");
+    r.forEach((c, i) => {
+      const td = document.createElement("td");
+      td.textContent = i === 0 ? fmtTime(Date.parse(c) / 1000) : c;
+      tr.append(td);
+    });
+    tbl.append(tr);
+  });
+}
+
+async function load() {
+  document.body.classList.add("loading");
+  $("#status").textContent = "Loading…";
+  try {
+    const res = await fetch(`/api/data?hours=${hours}`);
+    data = await res.json();
+    $("#where").textContent = data.meta.location;
+    $("#pa-notice").hidden = data.meta.purpleair;
+    $("#csv").href = `/api/csv?hours=${hours}`;
+    $("#sources").textContent =
+      `Indoor: AirGradient local API, sampled every minute. Outdoor PM2.5: ` +
+      (data.meta.purpleair ? `median of outdoor PurpleAir sensors within ${data.meta.purpleair_radius_km} km (EPA-corrected); ` : "") +
+      `${data.meta.ref_site} via EPA AirNow (hourly). Weather: NWS ${data.meta.nws_station}. ` +
+      `Chart resolution: ${data.bucket >= 3600 ? data.bucket / 3600 + " h" : data.bucket / 60 + " min"} means. ` +
+      (data.meta.first_ts ? `Indoor history from ${new Date(data.meta.first_ts * 1000).toLocaleDateString([], { year: "numeric", month: "short", day: "numeric" })}.` : "");
+    render();
+    $("#status").textContent = `Updated ${fmtTime(Date.now() / 1000, false)}`;
+  } catch (e) {
+    $("#status").textContent = "Could not reach the local server.";
+  } finally {
+    document.body.classList.remove("loading");
+  }
+}
+
+document.querySelectorAll("#range button").forEach(b => {
+  b.setAttribute("aria-pressed", +b.dataset.h === hours);
+  b.onclick = () => {
+    hours = +b.dataset.h;
+    try { localStorage.setItem("airq.hours", hours); } catch {}
+    document.querySelectorAll("#range button").forEach(x => x.setAttribute("aria-pressed", x === b));
+    load();
+  };
+});
+document.querySelectorAll("#theme button").forEach(b => b.onclick = () => {
+  theme = b.dataset.t;
+  try { localStorage.setItem("airq.theme", theme); } catch {}
+  applyTheme(); render();
+});
+matchMedia("(prefers-color-scheme: dark)").addEventListener("change", render);
+$("#table-details").addEventListener("toggle", renderTable);
+let rt; addEventListener("resize", () => { clearTimeout(rt); rt = setTimeout(render, 150); });
+applyTheme();
+load();
+setInterval(load, 60_000);
+</script>
+</body>
+</html>

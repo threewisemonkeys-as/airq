@@ -1,0 +1,5 @@
+# Personal settings (API tokens, monitor serial, location) and collected data
+config.json
+data/
+__pycache__/
+.DS_Store

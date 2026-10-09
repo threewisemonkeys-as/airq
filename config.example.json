@@ -1,0 +1,16 @@
+{
+  "monitor_host": "airgradient_<SERIAL>.local",
+  "monitor_fallback_ip": "",
+  "location": { "name": "My City", "lat": 0.0, "lon": 0.0 },
+  "nws_station": "KXXX",
+  "airnow_sites": {
+    "000000000": "Nearest AirNow PM2.5 site (shown as the regional reference)",
+    "000000001": "Second-nearest site (optional)"
+  },
+  "airgradient_api_token": "",
+  "purpleair_api_key": "",
+  "purpleair_radius_km": 6,
+  "purpleair_interval_min": 15,
+  "db_path": "data/airq.sqlite",
+  "server_port": 8765
+}
