@@ -461,14 +461,14 @@ function renderTiles() {
     ? `Outdoor · ${L.out_pm25_n ? L.out_pm25_n.value : "?"} sensors` : "Outdoor · regional";
   const age = k => L[k] ? `${Math.round((Date.now() / 1000 - L[k].ts) / 60)} min ago` : "";
   const el = $("#tiles"); el.replaceChildren(
+    tile("Temperature now", [
+      { v: f("in_temp", 1), u: "°C", k: "Indoor", color: "--s-indoor" },
+      { v: f("out_temp", 1), u: "°C", k: "Outdoor", color: "--s-outdoor" }], `outdoor ${age("out_temp")}`),
     tile("PM2.5 now", [
       { v: f("in_pm25", 1), u: "µg/m³", k: "Indoor", color: "--s-indoor" },
       { v: f(outKey, 1), u: "µg/m³", k: outLabel, color: outKey === "out_pm25" ? "--s-outdoor" : "--s-regional" }],
       `outdoor reading ${age(outKey)}`,
       [{ name: "Indoor", tier: tierOf("pm", L.in_pm25?.value) }, { name: "Outdoor", tier: tierOf("pm", L[outKey]?.value) }]),
-    tile("Temperature now", [
-      { v: f("in_temp", 1), u: "°C", k: "Indoor", color: "--s-indoor" },
-      { v: f("out_temp", 1), u: "°C", k: "Outdoor", color: "--s-outdoor" }], `outdoor ${age("out_temp")}`),
     tile("Dew point now", [
       { v: f("in_dew", 1), u: "°C", k: "Indoor", color: "--s-indoor" },
       { v: f("out_dew", 1), u: "°C", k: "Outdoor", color: "--s-outdoor" }], null,
