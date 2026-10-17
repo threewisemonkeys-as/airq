@@ -22,6 +22,7 @@ conditions from nearby public stations (US).
 | Outdoor PM2.5 (local) | PurpleAir outdoor sensors within `purpleair_radius_km` — median, EPA-corrected with the same formula AirGradient uses | Densest network in most US towns. **Needs an API key.** |
 | Outdoor PM2.5 (reference) | EPA AirNow hourly files for `airnow_sites` | Reference-grade instruments, but may be far away. No key. |
 | Outdoor temp / humidity / dew point | NWS `api.weather.gov` observations for `nws_station`; history from the Iowa Environmental Mesonet ASOS archive | No key. |
+| Outdoor temperature forecast | NWS gridpoint forecast for `location` (hourly, refreshed hourly, ~7 days ahead) | No key. |
 
 ## Setup
 

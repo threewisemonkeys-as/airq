@@ -9,6 +9,7 @@ import json
 import logging
 import math
 import os
+import re
 import sqlite3
 import ssl
 import statistics
@@ -53,6 +54,12 @@ CREATE TABLE IF NOT EXISTS outdoor (
     metric TEXT NOT NULL,        -- pm25, temp, dewpoint, rh, ...
     value REAL,
     PRIMARY KEY (ts, source, metric)
+);
+CREATE TABLE IF NOT EXISTS forecast (
+    ts INTEGER NOT NULL,         -- hour start, unix seconds, UTC; replaced wholesale on each fetch
+    metric TEXT NOT NULL,        -- temp
+    value REAL,
+    PRIMARY KEY (ts, metric)
 );
 CREATE TABLE IF NOT EXISTS state (key TEXT PRIMARY KEY, value TEXT);
 """
@@ -223,6 +230,37 @@ def collect_nws(db):
             "pressure_hpa": val(p, "barometricPressure", 0.01),
         })
     set_state(db, "nws_last", time.time())
+
+
+def iso_hours(duration):
+    """Hours in an ISO 8601 duration like PT3H or P1DT2H (NWS grid validTime)."""
+    m = re.fullmatch(r"P(?:(\d+)D)?(?:T(?:(\d+)H)?)?", duration)
+    return int(m[1] or 0) * 24 + int(m[2] or 0) if m else 1
+
+
+def collect_forecast(db):
+    """NWS gridpoint forecast for the configured location, expanded to hourly values."""
+    if not due(db, "forecast_last", 60):
+        return
+    grid = get_state(db, "nws_grid_url")
+    if not grid:
+        loc = CONFIG["location"]
+        grid = http_json(f"https://api.weather.gov/points/{loc['lat']:.4f},{loc['lon']:.4f}",
+                         headers={"Accept": "application/geo+json"})["properties"]["forecastGridData"]
+        set_state(db, "nws_grid_url", grid)
+    temp = http_json(grid, headers={"Accept": "application/geo+json"})["properties"]["temperature"]
+    if temp["uom"] != "wmoUnit:degC":
+        raise ValueError(f"unexpected forecast unit {temp['uom']}")
+    rows = []
+    for v in temp["values"]:
+        if v["value"] is None:
+            continue
+        start, dur = v["validTime"].split("/")
+        ts = int(datetime.fromisoformat(start).timestamp())
+        rows += [(ts + h * 3600, "temp", round(v["value"], 2)) for h in range(iso_hours(dur))]
+    db.execute("DELETE FROM forecast")
+    db.executemany("INSERT OR REPLACE INTO forecast VALUES (?, ?, ?)", rows)
+    set_state(db, "forecast_last", time.time())
 
 
 # ---------------------------------------------------------------- AirNow
@@ -422,7 +460,7 @@ def main():
     db = sqlite3.connect(DB_PATH, timeout=30)
     db.execute("PRAGMA journal_mode=WAL")
     db.executescript(SCHEMA)
-    for fn in (collect_indoor, collect_purpleair, collect_nws, collect_airnow, collect_ag_gapfill):
+    for fn in (collect_indoor, collect_purpleair, collect_nws, collect_forecast, collect_airnow, collect_ag_gapfill):
         try:
             fn(db)
             db.commit()

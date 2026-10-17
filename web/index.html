@@ -193,6 +193,12 @@ function tierOf(id, v) {
   if (v == null || !BANDS[id]) return null;
   return BANDS[id].find(b => v >= b.from && v < b.to) || { label: GOOD[id], role: "good" };
 }
+function seriesKey(s) {
+  const k = document.createElement("i"); k.className = "key";
+  k.style.background = s.dash
+    ? `repeating-linear-gradient(90deg, ${css(s.color)} 0 4px, transparent 4px 7px)` : css(s.color);
+  return k;
+}
 function statusDot(role) {
   const d = document.createElement("i"); d.className = "status-dot"; d.style.background = css(`--st-${role}`);
   return d;
@@ -209,21 +215,38 @@ function applyTheme() {
   document.querySelectorAll("#theme button").forEach(b => b.setAttribute("aria-pressed", b.dataset.t === theme));
 }
 
+/* Join observed columns (on t) and forecast columns (on ft) onto one shared, sorted time axis. */
+function withForecast(t, cols, ft, fcols, series) {
+  const all = [...new Set([...t, ...ft])].sort((a, b) => a - b);
+  const pos = new Map(all.map((x, i) => [x, i]));
+  const raw = {};
+  const place = (times, src) => Object.entries(src).forEach(([k, vals]) => {
+    raw[k] = new Array(all.length).fill(null);
+    times.forEach((x, i) => raw[k][pos.get(x)] = vals[i]);
+  });
+  place(t, cols); place(ft, fcols);
+  return { t: all, raw, series };
+}
+
 /* ---- chart definitions: one y-scale per chart; colors follow the entity ---- */
 function chartDefs(d) {
   const S = d.series;
   const paOn = d.meta.purpleair;
+  const fc = d.forecast || { t: [], temp: [] };
+  const temp = withForecast(d.t, { in_temp: S.in_temp, out_temp: S.out_temp }, fc.t, { out_temp_fc: fc.temp }, [
+    { key: "in_temp", label: "Indoor", color: "--s-indoor" },
+    { key: "out_temp", label: "Outdoor · airport", color: "--s-outdoor" },
+    ...(fc.t.length ? [{ key: "out_temp_fc", label: "Outdoor · forecast", color: "--s-outdoor", dash: true }] : [])]);
   const pm = [
     { key: "in_pm25", label: SERIES_LABEL.in, color: "--s-indoor" },
     ...(paOn ? [{ key: "out_pm25", label: SERIES_LABEL.out, color: "--s-outdoor" }] : []),
     { key: "ref_pm25", label: `${SERIES_LABEL.ref} (${d.meta.ref_site.split(" (")[0]})`, color: "--s-regional" },
   ];
   return [
-    { id: "pm", wide: true, title: "PM2.5", unit: "µg/m³", dec: 1, min0: true,
-      desc: (paOn ? "Fine particles. Indoor and PurpleAir values use the same EPA correction."
-                 : "Fine particles. Indoor is EPA-corrected; the regional monitor is a reference-grade instrument.")
-            + " Regional values older than 3 days are daily means. Bands: EPA AQI categories (defined for 24 h averages).",
-      t: d.t, series: pm },
+    { id: "temp", wide: true, title: "Temperature", unit: "°C", dec: 1, now: fc.t.length > 0,
+      desc: `Outdoor: NWS station ${d.meta.nws_station}.` +
+            (fc.t.length ? " Dashed: NWS hourly forecast for your location, from now on." : ""),
+      ...temp },
     { id: "ratio", title: "Indoor ÷ outdoor PM2.5", unit: "×", dec: 2, min0: true, refLine: 1,
       refLabel: "1× (same as outside)",
       desc: `Hourly. Below 1 means your home keeps particles out; above 1 means an indoor source. ` +
@@ -231,11 +254,11 @@ function chartDefs(d) {
             (d.ratio.basis === "out_pm25" ? "local PurpleAir sensors." : "regional monitor."),
       t: d.ratio.t, raw: { ratio: d.ratio.v },
       series: [{ key: "ratio", label: "Indoor ÷ outdoor", color: "--s-ratio" }] },
-    { id: "temp", title: "Temperature", unit: "°C", dec: 1,
-      desc: `Outdoor: NWS station ${d.meta.nws_station}.`,
-      t: d.t, series: [
-        { key: "in_temp", label: "Indoor", color: "--s-indoor" },
-        { key: "out_temp", label: "Outdoor · airport", color: "--s-outdoor" }] },
+    { id: "pm", title: "PM2.5", unit: "µg/m³", dec: 1, min0: true,
+      desc: (paOn ? "Fine particles. Indoor and PurpleAir values use the same EPA correction."
+                 : "Fine particles. Indoor is EPA-corrected; the regional monitor is a reference-grade instrument.")
+            + " Regional values older than 3 days are daily means. Bands: EPA AQI categories (defined for 24 h averages).",
+      t: d.t, series: pm },
     { id: "dew", title: "Dew point", unit: "°C", dec: 1,
       desc: "Absolute moisture — directly comparable indoors and out, unlike relative humidity.",
       t: d.t, series: [
@@ -276,8 +299,9 @@ function tooltipPlugin(def, tip) {
         tip.append(t);
         def.series.forEach((s, k) => {
           const v = u.data[k + 1][i];
+          if (v == null && def.now) return;  // observed vs forecast: only one side exists at a time
           const row = document.createElement("div"); row.className = "row";
-          const key = document.createElement("i"); key.className = "key"; key.style.background = css(s.color);
+          const key = seriesKey(s);
           const b = document.createElement("b");
           b.textContent = v == null ? "—" : `${v.toFixed(def.dec)} ${def.unit}`;
           const l = document.createElement("span"); l.textContent = s.label;
@@ -371,6 +395,27 @@ function refLinePlugin(y, label) {
   };
 }
 
+// Vertical "Now" marker separating observations from forecast.
+function nowLinePlugin() {
+  return {
+    hooks: {
+      draw: u => {
+        const ctx = u.ctx, dpr = devicePixelRatio, px = u.valToPos(Date.now() / 1000, "x", true);
+        if (px < u.bbox.left || px > u.bbox.left + u.bbox.width) return;
+        ctx.save();
+        ctx.strokeStyle = css("--text-muted"); ctx.lineWidth = dpr; ctx.setLineDash([2 * dpr, 3 * dpr]);
+        ctx.beginPath(); ctx.moveTo(px, u.bbox.top); ctx.lineTo(px, u.bbox.top + u.bbox.height); ctx.stroke();
+        ctx.font = `${11 * dpr}px system-ui`; ctx.textAlign = "left"; ctx.textBaseline = "top";
+        const w = ctx.measureText("Now").width;
+        labelBacking(ctx, px + 3 * dpr, u.bbox.top + 2 * dpr, w + 6 * dpr, 16 * dpr);
+        ctx.fillStyle = css("--text-muted");
+        ctx.fillText("Now", px + 6 * dpr, u.bbox.top + 4 * dpr);
+        ctx.restore();
+      },
+    },
+  };
+}
+
 function render() {
   if (!data) return;
   plots.forEach(p => p.destroy()); plots = [];
@@ -389,8 +434,7 @@ function render() {
       const lg = document.createElement("div"); lg.className = "legend";
       for (const s of def.series) {
         const sp = document.createElement("span");
-        const k = document.createElement("i"); k.className = "key"; k.style.background = css(s.color);
-        sp.append(k, document.createTextNode(s.label)); lg.append(sp);
+        sp.append(seriesKey(s), document.createTextNode(s.label)); lg.append(sp);
       }
       card.append(lg);
     }
@@ -418,11 +462,13 @@ function render() {
       } }],
       series: [{}, ...def.series.map(s => ({
         label: s.label, stroke: css(s.color), width: 2, spanGaps: true,
+        ...(s.dash ? { dash: [6, 4] } : {}),
         points: { show: false },
       }))],
       plugins: [tooltipPlugin(def, tip),
                 ...(BANDS[def.id] ? [bandsPlugin(BANDS[def.id])] : []),
-                ...(def.refLine != null ? [refLinePlugin(def.refLine, def.refLabel)] : [])],
+                ...(def.refLine != null ? [refLinePlugin(def.refLine, def.refLabel)] : []),
+                ...(def.now ? [nowLinePlugin()] : [])],
     };
     const u = new uPlot(opts, [def.t, ...def.values], plotEl);
     u.over.addEventListener("mouseleave", () => tip.style.display = "none");

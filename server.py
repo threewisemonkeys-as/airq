@@ -52,6 +52,10 @@ def dew_point(t, rh):
     return b * g / (a - g)
 
 
+# Outdoor temperature forecast shown ahead of "now", by selected range (hours -> hours ahead).
+# Longer ranges show everything NWS provides (~7 days).
+FORECAST_AHEAD = {24: 3, 72: 24, 168: 72}
+
 BUCKETS = (600, 3600, 3 * 3600, 6 * 3600, 12 * 3600, 86400)
 MAX_POINTS = 3000
 
@@ -138,6 +142,20 @@ def latest(db):
     return res
 
 
+def forecast(db, hours):
+    now = int(time.time())
+    end = now + FORECAST_AHEAD.get(hours, 24 * 14) * 3600
+    try:
+        rows = db.execute("SELECT ts, value FROM forecast WHERE metric='temp' AND ts >= ? AND ts <= ? "
+                          "ORDER BY ts", (now // 3600 * 3600, end)).fetchall()
+    except sqlite3.OperationalError:  # collector hasn't created the table yet
+        rows = []
+    if len(rows) >= 2 and rows[0][0] < now:  # start the line at "now", interpolated within the hour
+        (t0, v0), (t1, v1) = rows[0], rows[1]
+        rows[0] = (now, round(v0 + (v1 - v0) * (now - t0) / (t1 - t0), 2))
+    return {"t": [r[0] for r in rows], "temp": [r[1] for r in rows]}
+
+
 def build(hours):
     db = connect()
     since = span_start(db, hours)
@@ -156,6 +174,7 @@ def build(hours):
         "t": t,
         "series": series,
         "ratio": {"t": ht, "v": ratio, "basis": basis, "min_outdoor": RATIO_MIN_OUTDOOR},
+        "forecast": forecast(db, hours),
         "latest": latest(db),
         "meta": {
             "location": CONFIG["location"]["name"],
