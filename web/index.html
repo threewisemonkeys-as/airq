@@ -2,10 +2,11 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
+<script>/* served under a sub-path (e.g. /mic): add the trailing slash so relative api/ URLs resolve */ if (!/[/]$|\.html$/.test(location.pathname)) location.replace(location.pathname + "/" + location.search + location.hash);</script>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Bedroom Air Monitor</title>
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/uplot@1.6.31/dist/uPlot.min.css" integrity="sha384-IfV0B7MIOYuO95kO9G5ySKPz/85zqFNOAs8iy4tkK5zd9izhJAB8b7lHrwYqqmYE" crossorigin="anonymous">
-<script src="https://cdn.jsdelivr.net/npm/uplot@1.6.31/dist/uPlot.iife.min.js" integrity="sha384-XMP23k7YSCFr13Xrkxh4IO0v1W+8fB6AP+3Vycxphp2Z0V2vocAZHyuGaFCysrtM" crossorigin="anonymous"></script>
+<link rel="stylesheet" href="vendor/uPlot.min.css" integrity="sha384-IfV0B7MIOYuO95kO9G5ySKPz/85zqFNOAs8iy4tkK5zd9izhJAB8b7lHrwYqqmYE" crossorigin="anonymous">
+<script src="vendor/uPlot.iife.min.js" integrity="sha384-XMP23k7YSCFr13Xrkxh4IO0v1W+8fB6AP+3Vycxphp2Z0V2vocAZHyuGaFCysrtM" crossorigin="anonymous"></script>
 <style>
 :root {
   color-scheme: light;
@@ -482,7 +483,7 @@ function renderTiles() {
 
 async function renderTable() {
   if (!$("#table-details").open) return;
-  const res = await fetch(`/api/csv?hours=${hours}`);
+  const res = await fetch(`api/csv?hours=${hours}`);
   const rows = (await res.text()).trim().split("\n").map(r => r.split(","));
   const tbl = $("#table"); tbl.replaceChildren();
   const head = document.createElement("tr");
@@ -503,11 +504,11 @@ async function load() {
   document.body.classList.add("loading");
   $("#status").textContent = "Loading…";
   try {
-    const res = await fetch(`/api/data?hours=${hours}`);
+    const res = await fetch(`api/data?hours=${hours}`);
     data = await res.json();
     $("#where").textContent = data.meta.location;
     $("#pa-notice").hidden = data.meta.purpleair;
-    $("#csv").href = `/api/csv?hours=${hours}`;
+    $("#csv").href = `api/csv?hours=${hours}`;
     $("#sources").textContent =
       `Indoor: AirGradient local API, sampled every minute. Outdoor PM2.5: ` +
       (data.meta.purpleair ? `median of outdoor PurpleAir sensors within ${data.meta.purpleair_radius_km} km (EPA-corrected); ` : "") +
